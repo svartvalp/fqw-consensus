@@ -22,6 +22,7 @@ const (
 )
 
 type Module interface {
+	Store(key string, val string) error
 	RequestVote(query dto.RequestVoteQuery) (dto.RequestVoteResponse, error)
 	AppendEntries(query dto.AppendEntriesQuery) (dto.AppendEntriesResponse, error)
 	GetState() interface{}
@@ -43,10 +44,36 @@ type module struct {
 	ElectionTimeout *time.Time `json:"election_timeout,omitempty"`
 	tick            *time.Ticker
 
-	commitIndex int64
+	CommitIndex int64 `json:"commit_index"`
 
 	nextIndex  map[int64]int64
 	matchIndex map[int64]int64
+}
+
+func (m *module) Store(key string, val string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.State != Leader {
+		return nil
+	}
+	lastLog := m.log.LastLog()
+	lastLogIndex := int64(1)
+	if lastLog != nil {
+		lastLogIndex = lastLog.Index + 1
+	}
+	entry := log.Entry{
+		Index: lastLogIndex,
+		Term:  m.CurrentTerm,
+		Data: log.KV{
+			Key:   key,
+			Value: val,
+		},
+	}
+	err := m.log.StoreLogs([]log.Entry{entry})
+	if err != nil {
+		panic(err)
+	}
+	return nil
 }
 
 func (m *module) RequestVote(query dto.RequestVoteQuery) (dto.RequestVoteResponse, error) {
@@ -133,8 +160,8 @@ func (m *module) AppendEntries(query dto.AppendEntriesQuery) (dto.AppendEntriesR
 			panic(err)
 		}
 	}
-	if m.commitIndex < query.LeaderCommit {
-		m.commitIndex = query.LeaderCommit
+	if m.CommitIndex < query.LeaderCommit {
+		m.CommitIndex = query.LeaderCommit
 		m.restore()
 	}
 
@@ -145,7 +172,16 @@ func (m *module) AppendEntries(query dto.AppendEntriesQuery) (dto.AppendEntriesR
 }
 
 func (m *module) GetState() interface{} {
-	return m
+	return State{
+		Store:           m.store.GetAll(),
+		LocalID:         m.LocalID,
+		CurrentTerm:     m.CurrentTerm,
+		VotedFor:        m.VotedFor,
+		State:           m.State,
+		Votes:           m.Votes,
+		ElectionTimeout: m.ElectionTimeout,
+		CommitIndex:     m.CommitIndex,
+	}
 }
 
 func (m *module) Start() {
@@ -249,7 +285,7 @@ func (m *module) startLeader() {
 		lastIndex = l.Index
 	}
 	for id, _ := range m.proxy.GetAllClients() {
-		m.nextIndex[id] = lastIndex
+		m.nextIndex[id] = lastIndex + 1
 		m.matchIndex[id] = 0
 	}
 
@@ -268,11 +304,16 @@ func (m *module) startLeader() {
 			m.mu.Unlock()
 			m.sendAppendEntries()
 		}
-	}(500 * time.Millisecond)
+	}(1 * time.Second)
 }
 
 func (m *module) restore() {
-
+	m.store.Clear()
+	for _, l := range m.log.GetAll() {
+		if l.Index <= m.CommitIndex {
+			m.store.Apply(l)
+		}
+	}
 }
 
 func (m *module) sendAppendEntries() {
@@ -285,19 +326,29 @@ func (m *module) sendAppendEntries() {
 			nextIndex := m.nextIndex[id]
 			var prevLogIndex int64
 			var prevLogTerm int64
-			if nextIndex > 0 {
-				prevLogIndex = nextIndex - 1
-				prevLogTerm = m.log.GetLog(prevLogIndex).Term
+			prevLogIndex = nextIndex - 1
+			prevLog := m.log.GetLog(prevLogIndex)
+			if prevLog != nil {
+				prevLogTerm = prevLog.Term
 			}
 			entries := m.log.GetFrom(nextIndex)
 			m.mu.Unlock()
-			_, err := cl.AppendEntries(dto.AppendEntriesQuery{
+			fmt.Printf("next index %v \n", nextIndex)
+			fmt.Printf("term %v leaderId %v prevlogIndex %v prevlogTerm %v entries %v leader commit %v \n",
+				m.CurrentTerm,
+				m.LocalID,
+				prevLogIndex,
+				prevLogTerm,
+				entries,
+				m.CommitIndex,
+			)
+			res, err := cl.AppendEntries(dto.AppendEntriesQuery{
 				Term:         m.CurrentTerm,
 				LeaderID:     m.LocalID,
 				PrevLogIndex: prevLogIndex,
 				PrevLogTerm:  prevLogTerm,
 				Entries:      entries,
-				LeaderCommit: m.commitIndex,
+				LeaderCommit: m.CommitIndex,
 			})
 			if err != nil {
 				fmt.Printf("append entries failed: %v \n", err)
@@ -306,8 +357,38 @@ func (m *module) sendAppendEntries() {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 
-			// logic with append entries response
-
+			if res.Term > m.CurrentTerm {
+				m.State = Follower
+				m.CurrentTerm = res.Term
+				m.resetElectionTimeout()
+				return
+			}
+			if res.Success {
+				if len(entries) > 0 {
+					m.nextIndex[id] = entries[len(entries)-1].Index + 1
+					m.matchIndex[id] = entries[len(entries)-1].Index
+				}
+				newCommitIndex := m.CommitIndex
+				for {
+					indexPresence := 1
+					for _, index := range m.matchIndex {
+						if index > newCommitIndex {
+							indexPresence++
+						}
+					}
+					if indexPresence*2 > len(m.proxy.GetAllClients()) {
+						newCommitIndex++
+					} else {
+						break
+					}
+				}
+				if newCommitIndex > m.CommitIndex {
+					m.CommitIndex = newCommitIndex
+					m.restore()
+				}
+			} else {
+				m.nextIndex[id] = res.ConflictIndex
+			}
 		}(id, cl)
 	}
 }

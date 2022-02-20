@@ -10,21 +10,29 @@ type Log interface {
 	StoreLogs(entries []Entry) error
 	DeleteFrom(index int64)
 	GetFrom(index int64) []Entry
+	GetAll() []Entry
 }
 
 type log struct {
 	logs []Entry
 }
 
+func (l *log) GetAll() []Entry {
+	return l.logs
+}
+
 func (l *log) GetFrom(index int64) []Entry {
 	if index == 0 {
 		return make([]Entry, 0)
 	}
-	var logInd int
+	logInd := -1
 	for i, log := range l.logs {
 		if log.Index == index {
 			logInd = i
 		}
+	}
+	if logInd == -1 {
+		return make([]Entry, 0)
 	}
 	return l.logs[logInd:]
 }
@@ -56,17 +64,23 @@ func (l *log) GetLog(index int64) *Entry {
 }
 
 func (l *log) StoreLogs(entries []Entry) error {
-	lastLog := l.logs[len(l.logs)-1]
+	var lastLogIndex int64
+	if len(l.logs) > 0 {
+		lastLog := l.logs[len(l.logs)-1]
+		lastLogIndex = lastLog.Index
+	}
 	for _, entry := range entries {
-		if entry.Index < lastLog.Index {
+		if entry.Index < lastLogIndex {
 			return errors.New("entry with low index found")
 		}
 		l.logs = append(l.logs, entry)
-		lastLog = entry
+		lastLogIndex = entry.Index
 	}
 	return nil
 }
 
 func New() Log {
-	return &log{}
+	return &log{
+		logs: make([]Entry, 0),
+	}
 }

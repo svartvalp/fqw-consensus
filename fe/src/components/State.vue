@@ -27,7 +27,7 @@ export default {
   setup() {
   },
   props: {
-    state: Object
+    state: Object,
   },
   computed: {
     getBG() {

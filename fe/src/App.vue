@@ -1,22 +1,23 @@
 <template>
   <WidgetContainerModal/>
-  <div class="container" style="height: 100%">
-    <div class="row justify-content-center" >
+  <nav class="navbar navbar-expand-lg navbar-light bg-light" style="height: 8%;">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">Мониторинг</a>
+    </div>
+  </nav>
+  <div class="container" style="height: 88%; margin-top: 2%">
+    <div class="row justify-content-center" style="margin-bottom: 3%;">
       <div class="col-md-2">
-        <button type="button" class="btn btn-primary" @click="open()" >Отправить состояние</button>
+        <button type="button" class="btn btn-primary" @click="open()">Отправить состояние</button>
       </div>
     </div>
-    <router-view>
-
-    </router-view>
-    <div class="row align-items-center h-100">
-      <State v-for="state in states" :state="state" :key="state"></State>
+    <div class="row align-items-center h-75">
+      <router-view :states="states">
+      </router-view>
     </div>
   </div>
 </template>
-
 <script>
-import State from "./components/State";
 import axios from 'axios';
 import {reactive, ref} from "vue";
 import {container, openModal} from "jenesius-vue-modal"
@@ -25,7 +26,6 @@ import ReqModal from "./components/ReqModal";
 export default {
   name: 'App',
   components: {
-    State,
     WidgetContainerModal: container,
   },
   setup() {

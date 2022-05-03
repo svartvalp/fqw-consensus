@@ -1,8 +1,8 @@
 <template>
   <div class="col">
-  <div :class="['card', this.getBG, this.getText]">
+  <div :class="['card', this.getBG, this.getText, 'bg-opacity-50']">
     <div class="card-body">
-      <h5 class="card-title">ID: {{this.state.local_id}}</h5>
+      <h5 class="card-title">ID: {{this.state.local_id}} <router-link v-if="this.state.local_id" :to="'/servers/' + this.state.local_id">Перейти</router-link> </h5>
       <ul class="list-group list-group-flush">
         <li class="list-group-item" ><div class="fw-bold">Term:</div>  {{this.state.current_term}}</li>
         <li class="list-group-item"><div class="fw-bold">State:</div> <span :class="['badge',this.getBG]">{{this.state.state}}</span></li>
@@ -32,7 +32,7 @@ export default {
   computed: {
     getBG() {
       if (this.state.state === 'Leader') {
-        return 'bg-primary'
+        return 'bg-success'
       }
       if (this.state.state === 'Dead') {
         return 'bg-warning'

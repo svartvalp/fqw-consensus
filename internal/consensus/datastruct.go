@@ -2,6 +2,8 @@ package consensus
 
 import (
 	"time"
+
+	"github.com/svartvalp/fqw-consensus/internal/log"
 )
 
 type State struct {
@@ -13,4 +15,5 @@ type State struct {
 	Votes           int               `json:"votes"`
 	ElectionTimeout *time.Time        `json:"election_timeout,omitempty"`
 	CommitIndex     int64             `json:"commit_index"`
+	Logs            []log.Entry       `json:"logs"`
 }

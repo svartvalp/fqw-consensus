@@ -181,6 +181,7 @@ func (m *module) GetState() interface{} {
 		Votes:           m.Votes,
 		ElectionTimeout: m.ElectionTimeout,
 		CommitIndex:     m.CommitIndex,
+		Logs:            m.log.GetAll(),
 	}
 }
 
